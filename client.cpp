@@ -6,6 +6,10 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <list>
+#include <iterator>
+
+using namespace std;
 
 void client_sockets(const char ip_address[], int port);
 void manual_client(const char file_path[], struct sockaddr_in server_addr);
@@ -96,7 +100,7 @@ void client_sockets(const char ip_address[], int port)
     server_addr.sin_port = (in_port_t)htons(port);
     server_addr.sin_addr.s_addr = inet_addr(ip_address);
 
-    const char filePath[] = "processes";
+    const char filePath[] = "processes.txt";
     manual_client(filePath, server_addr);
 }
 
@@ -109,13 +113,11 @@ void manual_client(const char file_path[], struct sockaddr_in server_addr)
     struct proc_thr_args pta;
     pta.server_addr = server_addr;
 
-    int cont = 0;
-    pthread_t threads[2];
+    list<pthread_t> threads;
 
     while (fgets(line, sizeof(line), processes))
     {
         int line_len = strlen(line);
-        // Inits process thread arguments
 
         strncpy(pta.process_data, line, line_len);
 
@@ -126,7 +128,12 @@ void manual_client(const char file_path[], struct sockaddr_in server_addr)
             return;
         };
 
-        pthread_join(proc_thread, NULL);
-        cont++;
+        threads.push_front(proc_thread);
     };
+
+    list<pthread_t>::iterator it;
+    for (it = threads.begin(); it != threads.end(); it++)
+    {
+        pthread_join(*it, NULL);
+    }
 }

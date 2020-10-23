@@ -11,7 +11,6 @@ void server_sockets(int, int);
 
 int main(int argc, char *argv[])
 {
-
     if (argc != 2)
     {
         printf("Error: Too few arguments, PORT is mandatory.\n");
