@@ -27,7 +27,6 @@ int main(int argc, char *argv[])
 int open_socket()
 {
     printf("Info: Opening socket... \n");
-    // Opens a new socket
     int new_socket = socket(PF_INET, SOCK_STREAM, 0);
 
     if (new_socket < 0)
@@ -95,25 +94,28 @@ void server_sockets(int port, int max_connections)
 
     printf("Info: Server listening on port: %d.\n", port);
 
+    struct sockaddr_storage client;
+    unsigned int address_size = sizeof(client);
+    printf("Info: Waiting for clients...\n");
+
     while (1)
     {
-        struct sockaddr_storage client;
-        unsigned int address_size = sizeof(client);
-        printf("Info: Waiting for clients...\n");
-
         // Accepts a connection request from a client.
         int connect = accept(listener, (struct sockaddr *)&client, &address_size);
-        if (connect < 0)
+        if (connect == -1)
         {
             printf("Error: The connection could not be stablished.\n");
         };
 
         printf("Info: The request is being attended.\n");
+        char msg[] = "Rec-thread\n";
+        char client_message[2000];
 
-        char msg[] = "Test message\n";
+        recv(connect, client_message, 2000, 0);
+        printf("%s", client_message);
+
         send(connect, msg, strlen(msg), 0);
-
-        // Closes the connection when the request has been attended.
-        close(connect);
+        printf("sending messages");
+        sleep(3);
     };
 };
