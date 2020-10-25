@@ -7,13 +7,14 @@
 #include <pthread.h>
 #include <sys/socket.h>
 
-#define MIN_RAND 3;
-#define MAX_RAND 8;
-
 void init_server_conn(const char ip_address[], int port);
 void client_sockets(const char ip_address[], int port);
-void manual_client(const char file_path[], struct sockaddr_in server_addr);
+void manual_client(const char file_path[]);
+void auto_client(int min_burst, int max_burst, int min_cre_rate, int max_cre_rate);
+const char *generate_process(int min_burst, int max_burst);
+const int gen_cre_rate();
 
+int auto_client_active = 1;
 struct sockaddr_in server_addr;
 
 int main(int argc, char *argv[])
@@ -58,9 +59,7 @@ int open_socket()
 // Sends a process to the server and waits for a response;
 void *send_process(void *args)
 {
-    int range = MAX_RAND - MIN_RAND + 1;
-    range = (rand() % range) + MIN_RAND;
-
+    int range = (rand() % (4)) + 3;
     sleep(range);
 
     char process_data[256];
@@ -105,10 +104,11 @@ void *send_process(void *args)
 void client_sockets(const char ip_address[], int port)
 {
     const char filePath[] = "processes.txt";
-    manual_client(filePath, server_addr);
+    // manual_client(filePath);
+    auto_client(4, 8, 1, 5);
 };
 
-void manual_client(const char file_path[], struct sockaddr_in server_addr)
+void manual_client(const char file_path[])
 {
     FILE *processes;
     processes = fopen(file_path, "r");
@@ -132,4 +132,41 @@ void manual_client(const char file_path[], struct sockaddr_in server_addr)
         };
     };
     pthread_exit(NULL);
+};
+
+void auto_client(int min_burst, int max_burst, int min_cre_rate, int max_cre_rate)
+{
+    printf("Sending processes...\n\n\n");
+    printf("PID\tBURST\tPRIORITY\n");
+
+    while (auto_client_active)
+    {
+
+        const char *proc_data = generate_process(min_burst, max_burst);
+        pthread_t proc_thread;
+
+        if (pthread_create(&proc_thread, NULL, send_process, (void *)proc_data) == -1)
+        {
+            printf("Error: Could not create the thread\n");
+            return;
+        };
+        int creation_rate = gen_cre_rate(min_cre_rate, max_cre_rate);
+        sleep(creation_rate);
+    };
+    pthread_exit(NULL);
+};
+
+const int gen_cre_rate(int min_cre_rate, int max_cre_rate)
+{
+    return (rand() % (max_cre_rate - min_cre_rate + 1)) + min_cre_rate;
+}
+
+const char *generate_process(int min_burst, int max_burst)
+{
+    char *new_process = malloc(256);
+    int burst = (rand() % (max_burst - min_burst + 1)) + min_burst;
+    int priority = (rand() % 5) + 1;
+
+    snprintf(new_process, sizeof new_process, "%d,%d\n", burst, priority);
+    return (const char *)new_process;
 };
