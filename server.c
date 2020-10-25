@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 
 void server_sockets(int, int);
+int process_count = 1;
 
 int main(int argc, char *argv[])
 {
@@ -18,7 +19,7 @@ int main(int argc, char *argv[])
     };
 
     const int PORT = atoi(argv[1]);
-    server_sockets(PORT, 50);
+    server_sockets(PORT, 1);
 
     return 0;
 };
@@ -68,6 +69,55 @@ void bind_socket(int socket, int port)
     };
 }
 
+// PCB struct
+struct pcb
+{
+    int p_id;
+    int burst;
+    int priority;
+};
+
+struct pcb create_pcb(char process[])
+{
+    struct pcb proc_pcb;
+    proc_pcb.p_id = process_count;
+
+    char *delimiter = ",";
+
+    proc_pcb.burst = atoi(strtok(process, delimiter));
+    proc_pcb.priority = atoi(strtok(NULL, delimiter));
+
+    process_count++;
+    return proc_pcb;
+}
+
+void job_scheduler(int listener)
+{
+    while (1)
+    {
+        struct sockaddr_storage client;
+        unsigned int address_size = sizeof(client);
+
+        // Accepts a connection request from a client.
+        int connect = accept(listener, (struct sockaddr *)&client, &address_size);
+        if (connect == -1)
+        {
+            printf("Error: The connection could not be stablished.\n");
+        };
+
+        char client_message[2000];
+        recv(connect, client_message, 2000, 0);
+
+        struct pcb pr_pcb = create_pcb(client_message);
+        char new_process[256] = "";
+
+        snprintf(new_process, sizeof new_process, "%d\t%d\t%d\n", pr_pcb.p_id, pr_pcb.burst, pr_pcb.priority);
+        printf("%s", new_process);
+
+        send(connect, new_process, strlen(new_process), 0);
+    };
+}
+
 void server_sockets(int port, int max_connections)
 {
     // Creates the listener.
@@ -93,28 +143,7 @@ void server_sockets(int port, int max_connections)
 
     printf("Info: Server listening on port: %d.\n", port);
 
-    struct sockaddr_storage client;
-    unsigned int address_size = sizeof(client);
-    printf("Info: Waiting for clients...\n");
+    printf("PID\tBURST\tPRIORITY\n");
 
-    while (1)
-    {
-        // Accepts a connection request from a client.
-        int connect = accept(listener, (struct sockaddr *)&client, &address_size);
-        if (connect == -1)
-        {
-            printf("Error: The connection could not be stablished.\n");
-        };
-
-        printf("Info: The request is being attended.\n");
-        char msg[] = "Rec-thread\n";
-        char client_message[2000];
-
-        recv(connect, client_message, 2000, 0);
-        printf("%s", client_message);
-
-        send(connect, msg, strlen(msg), 0);
-        printf("sending messages");
-        sleep(3);
-    };
+    job_scheduler(listener);
 };
