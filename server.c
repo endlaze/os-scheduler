@@ -9,6 +9,9 @@
 
 void server_sockets(int, int);
 int process_count = 1;
+int simulator_active = 1;
+struct pcb *ready_head = NULL;
+struct pcb *ready_tail = NULL;
 
 int main(int argc, char *argv[])
 {
@@ -72,51 +75,87 @@ void bind_socket(int socket, int port)
 // PCB struct
 struct pcb
 {
+    struct pcb *prev;
     int p_id;
     int burst;
     int priority;
 };
 
-struct pcb create_pcb(char process[])
+struct pcb *create_pcb(char process[])
 {
-    struct pcb proc_pcb;
-    proc_pcb.p_id = process_count;
-
+    // Creates a new PCB for the incoming process.
     char *delimiter = ",";
+    struct pcb *proc_pcb = (struct pcb *)malloc(sizeof(struct pcb));
+    // Inits the pcb with the corresponding info.
+    proc_pcb->p_id = process_count;
+    proc_pcb->burst = atoi(strtok(process, delimiter));
+    proc_pcb->priority = atoi(strtok(NULL, delimiter));
+    proc_pcb->prev = NULL;
 
-    proc_pcb.burst = atoi(strtok(process, delimiter));
-    proc_pcb.priority = atoi(strtok(NULL, delimiter));
-
+    // Increases the process count by 1.
     process_count++;
     return proc_pcb;
-}
+};
 
-void job_scheduler(int listener)
+void *job_scheduler(void *args)
 {
-    while (1)
+    int listener = *((int *)args);
+    while (simulator_active)
     {
+        // Stores the address of the client.
         struct sockaddr_storage client;
         unsigned int address_size = sizeof(client);
 
-        // Accepts a connection request from a client.
+        // Accepts an incoming connection.
         int connect = accept(listener, (struct sockaddr *)&client, &address_size);
         if (connect == -1)
         {
             printf("Error: The connection could not be stablished.\n");
         };
 
-        char client_message[2000];
-        recv(connect, client_message, 2000, 0);
+        // Buffer used to store the incoming process from the client.
+        char client_process[256];
+        recv(connect, client_process, sizeof(client_process), 0);
 
-        struct pcb pr_pcb = create_pcb(client_message);
+        // Creates a PCB for the incoming process and pushes it into the ready queue.
+        struct pcb *pr_pcb = create_pcb(client_process);
+
+        // Inserts the new PCB in the ready queue
+        if (ready_head == NULL)
+        {
+            ready_head = pr_pcb;
+            ready_tail = ready_head;
+        }
+        else
+        {
+            ready_tail->prev = pr_pcb;
+            ready_tail = ready_tail->prev;
+        };
+
+        // Buffer used to send the new process info to the client.
         char new_process[256] = "";
+        snprintf(new_process, sizeof new_process, "%d\t%d\t%d\n", pr_pcb->p_id, pr_pcb->burst, pr_pcb->priority);
 
-        snprintf(new_process, sizeof new_process, "%d\t%d\t%d\n", pr_pcb.p_id, pr_pcb.burst, pr_pcb.priority);
-        printf("%s", new_process);
-
+        // Sends the info of the new process to the client.
         send(connect, new_process, strlen(new_process), 0);
     };
-}
+};
+
+void *print_ready_queue()
+{
+    printf("\n\nPID\tBURST\tPRIORITY\n");
+    // Prints all PBCs stored in the ready queue.
+    struct pcb *node = ready_head;
+    while (node != NULL)
+    {
+        char test[256] = "";
+        snprintf(test, sizeof test, "%d\t%d\t%d\n", node->p_id, node->burst, node->priority);
+        printf("%s", test);
+
+        node = node->prev;
+    };
+    printf("\n\n\n");
+};
 
 void server_sockets(int port, int max_connections)
 {
@@ -131,19 +170,25 @@ void server_sockets(int port, int max_connections)
     };
 
     printf("Info: Binding socket...\n");
-    // // Binds the socket to an IP address and port.
+    // Binds the socket to an IP address and port.
     bind_socket(listener, port);
 
-    // // Tries to listen for connections on the given port.
+    // Tries to listen for connections on the given port.
     if (listen(listener, max_connections))
     {
         printf("Error: Can't listen on port %d.\n", port);
         return;
     };
 
-    printf("Info: Server listening on port: %d.\n", port);
+    printf("Info: Server listening on port: %d.\n\n", port);
 
-    printf("PID\tBURST\tPRIORITY\n");
+    pthread_t job_scheduler_th;
 
-    job_scheduler(listener);
+    if (pthread_create(&job_scheduler_th, NULL, job_scheduler, (void *)&listener) == -1)
+    {
+        printf("Error: Could not create the job scheduler.\n");
+        return;
+    };
+
+    pthread_exit(NULL);
 };
