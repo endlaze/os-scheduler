@@ -7,11 +7,13 @@
 #include <pthread.h>
 #include <sys/socket.h>
 
+void fifo_algorithm();
 void server_sockets(int, int);
 int process_count = 1;
 int simulator_active = 1;
 struct pcb *ready_head = NULL;
 struct pcb *ready_tail = NULL;
+pthread_mutex_t mutex;
 
 int main(int argc, char *argv[])
 {
@@ -120,6 +122,8 @@ void *job_scheduler(void *args)
         // Creates a PCB for the incoming process and pushes it into the ready queue.
         struct pcb *pr_pcb = create_pcb(client_process);
 
+        //Tries to lock the mutex to insert the process into the ready queue
+        pthread_mutex_lock(&mutex);
         // Inserts the new PCB in the ready queue
         if (ready_head == NULL)
         {
@@ -131,7 +135,8 @@ void *job_scheduler(void *args)
             ready_tail->prev = pr_pcb;
             ready_tail = ready_tail->prev;
         };
-
+        // Returns the mutex to unlock state
+        pthread_mutex_unlock(&mutex);
         // Buffer used to send the new process info to the client.
         char new_process[256] = "";
         snprintf(new_process, sizeof new_process, "%d\t%d\t%d\n", pr_pcb->p_id, pr_pcb->burst, pr_pcb->priority);
@@ -139,10 +144,12 @@ void *job_scheduler(void *args)
         // Sends the info of the new process to the client.
         send(connect, new_process, strlen(new_process), 0);
     };
+    pthread_exit(NULL);
 };
 
-void *print_ready_queue()
+void print_ready_queue()
 {
+    pthread_mutex_lock(&mutex);
     printf("\n\nPID\tBURST\tPRIORITY\n");
     // Prints all PBCs stored in the ready queue.
     struct pcb *node = ready_head;
@@ -155,7 +162,59 @@ void *print_ready_queue()
         node = node->prev;
     };
     printf("\n\n\n");
+    pthread_mutex_unlock(&mutex);
 };
+
+void *cpu_scheduler(void *args) {
+    while (simulator_active)
+    {
+        sleep(1);
+        fifo_algorithm();
+    };
+    pthread_exit(NULL);
+}
+
+void fifo_algorithm() {
+    pthread_mutex_lock(&mutex);
+
+    struct pcb *node = ready_head;
+    if (node == NULL) {
+        pthread_mutex_unlock(&mutex);
+        return;
+    };
+    ready_head = node->prev;
+    pthread_mutex_unlock(&mutex);
+    char test[256] = "";
+    snprintf(test, sizeof test, "Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n", node->p_id, node->burst, node->priority);
+    printf("%s", test);
+    
+    sleep(node->burst);
+    free(node);
+    return;
+};
+
+void *io_handler(void *args) {
+    int option;
+    while (simulator_active)
+    {
+        printf("Ingresar opcion: ");
+        scanf("%d", &option);
+
+        switch (option)
+        {
+        case 1:
+            print_ready_queue();
+            break;
+        case 2:
+            simulator_active = 0;
+            break;
+        default:
+            break;
+        }
+    };
+    pthread_exit(NULL);
+    
+}
 
 void server_sockets(int port, int max_connections)
 {
@@ -182,11 +241,28 @@ void server_sockets(int port, int max_connections)
 
     printf("Info: Server listening on port: %d.\n\n", port);
 
+    //Initialize the mutex
+    pthread_mutex_init(&mutex, NULL);
+
     pthread_t job_scheduler_th;
+    pthread_t cpu_scheduler_th;
+    pthread_t io_th;
 
     if (pthread_create(&job_scheduler_th, NULL, job_scheduler, (void *)&listener) == -1)
     {
         printf("Error: Could not create the job scheduler.\n");
+        return;
+    };
+
+    if (pthread_create(&cpu_scheduler_th, NULL, cpu_scheduler, (void *) NULL) == -1 ) 
+    {
+        printf("Error: Could not create the CPU scheduler.\n");
+        return;
+    };
+
+    if (pthread_create(&io_th, NULL, io_handler, (void *) NULL) == -1 ) 
+    {
+        printf("Error: Could not create the CPU scheduler.\n");
         return;
     };
 
