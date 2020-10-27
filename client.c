@@ -104,8 +104,8 @@ void *send_process(void *args)
 void client_sockets(const char ip_address[], int port)
 {
     const char filePath[] = "processes.txt";
-    //manual_client(filePath);
-    auto_client(4, 8, 1, 5);
+    manual_client(filePath);
+    //auto_client(4, 8, 1, 5);
 };
 
 void manual_client(const char file_path[])

@@ -8,12 +8,19 @@
 #include <sys/socket.h>
 
 void fifo_algorithm();
+void sjf_algorithm();
+void rr_algorithm(int quantum);
 void server_sockets(int, int);
+void add_times(int burst);
+void delete_node(int p_id);
 int process_count = 1;
 int simulator_active = 1;
 struct pcb *ready_head = NULL;
 struct pcb *ready_tail = NULL;
+struct pcb *rr_last = NULL;
 pthread_mutex_t mutex;
+int run_time = 0;
+int exec_time = 0;
 
 int main(int argc, char *argv[])
 {
@@ -81,6 +88,7 @@ struct pcb
     int p_id;
     int burst;
     int priority;
+    int current_burst;
 };
 
 struct pcb *create_pcb(char process[])
@@ -165,35 +173,175 @@ void print_ready_queue()
     pthread_mutex_unlock(&mutex);
 };
 
-void *cpu_scheduler(void *args) {
+void *cpu_scheduler(void *args)
+{
     while (simulator_active)
     {
         sleep(1);
-        fifo_algorithm();
+        run_time++;
+        rr_algorithm(3);
     };
     pthread_exit(NULL);
 }
 
-void fifo_algorithm() {
+void fifo_algorithm()
+{
     pthread_mutex_lock(&mutex);
 
     struct pcb *node = ready_head;
-    if (node == NULL) {
+    if (node == NULL)
+    {
         pthread_mutex_unlock(&mutex);
         return;
     };
     ready_head = node->prev;
+
     pthread_mutex_unlock(&mutex);
-    char test[256] = "";
-    snprintf(test, sizeof test, "Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n", node->p_id, node->burst, node->priority);
-    printf("%s", test);
-    
+    printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n", node->p_id, node->burst, node->priority);
+    printf("El proceso PID %d sale de ejecucion\n\n", node->p_id);
     sleep(node->burst);
+    add_times(node->burst);
     free(node);
     return;
 };
 
-void *io_handler(void *args) {
+void sjf_algorithm()
+{
+    pthread_mutex_lock(&mutex);
+    struct pcb *node = ready_head;
+    struct pcb *min = ready_head;
+    struct pcb *min_forw = NULL;
+    if (node == NULL)
+    {
+        pthread_mutex_unlock(&mutex);
+        return;
+    }
+    while (node != NULL && node->prev != NULL)
+    {
+
+        if (node->prev->burst < min->burst)
+        {
+            min = node->prev;
+            min_forw = node;
+        }
+        node = node->prev;
+    };
+
+    if (min_forw == NULL)
+    {
+        ready_head = min->prev;
+    }
+    else
+    {
+        min_forw->prev = min->prev;
+    }
+
+    pthread_mutex_unlock(&mutex);
+    printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n\n", min->p_id, min->burst, min->priority);
+    sleep(min->burst);
+    printf("El proceso PID %d sale de ejecucion\n\n", min->p_id);
+    add_times(min->burst);
+    free(min);
+}
+
+void hpf_algorithm()
+{
+    pthread_mutex_lock(&mutex);
+    struct pcb *node = ready_head;
+    struct pcb *min = ready_head;
+    struct pcb *min_forw = NULL;
+
+    if (node == NULL)
+    {
+        pthread_mutex_unlock(&mutex);
+        return;
+    }
+    while (node != NULL && node->prev != NULL)
+    {
+
+        if (node->prev->priority < min->priority)
+        {
+            min = node->prev;
+            min_forw = node;
+        }
+        node = node->prev;
+    };
+
+    if (min_forw == NULL)
+    {
+        ready_head = min->prev;
+    }
+    else
+    {
+        min_forw->prev = min->prev;
+    }
+
+    pthread_mutex_unlock(&mutex);
+    printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n\n", min->p_id, min->burst, min->priority);
+    sleep(min->burst);
+    printf("El proceso PID %d sale de ejecucion\n\n", min->p_id);
+    add_times(min->burst);
+    free(min);
+}
+
+void rr_algorithm(int quantum)
+{
+    pthread_mutex_lock(&mutex);
+    struct pcb *node = NULL;
+    int sleep_time = quantum;
+
+    // If rr_last was the las element of the list, node will be the head
+    if (rr_last == NULL || rr_last->prev == NULL)
+        node = ready_head;
+    else
+    {
+        node = rr_last->prev;
+    }
+
+    if (node == NULL) {
+        pthread_mutex_unlock(&mutex);
+        return;
+    }
+
+    if (node->burst <= quantum) {
+        sleep_time = node->burst;
+
+        // If node is the head, change the head to the prev
+        if (node->p_id == ready_head->p_id){
+            ready_head = node->prev;
+
+        }
+
+        // If node isn't the head, then change the last prev to node prev
+        if (rr_last != NULL) {
+            rr_last->prev = node->prev;
+        }
+        
+        printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion a morir\n\n", node->p_id, sleep_time, node->priority);
+        // If node is the last element, set rr_last to null, else, free the node.
+        if(rr_last != NULL && rr_last->p_id == ready_head->p_id) {
+            rr_last = NULL;
+        }
+        else
+        {
+            free(node);
+        }
+        
+    }
+    else {
+        node->burst = node->burst - quantum;
+        rr_last = node;
+        printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n\n", node->p_id, sleep_time, node->priority);
+    }
+
+    pthread_mutex_unlock(&mutex);
+    add_times(sleep_time);
+    sleep(sleep_time);
+    
+}
+
+void *io_handler(void *args)
+{
     int option;
     while (simulator_active)
     {
@@ -213,7 +361,6 @@ void *io_handler(void *args) {
         }
     };
     pthread_exit(NULL);
-    
 }
 
 void server_sockets(int port, int max_connections)
@@ -254,13 +401,13 @@ void server_sockets(int port, int max_connections)
         return;
     };
 
-    if (pthread_create(&cpu_scheduler_th, NULL, cpu_scheduler, (void *) NULL) == -1 ) 
+    if (pthread_create(&cpu_scheduler_th, NULL, cpu_scheduler, (void *)NULL) == -1)
     {
         printf("Error: Could not create the CPU scheduler.\n");
         return;
     };
 
-    if (pthread_create(&io_th, NULL, io_handler, (void *) NULL) == -1 ) 
+    if (pthread_create(&io_th, NULL, io_handler, (void *)NULL) == -1)
     {
         printf("Error: Could not create the CPU scheduler.\n");
         return;
@@ -268,3 +415,9 @@ void server_sockets(int port, int max_connections)
 
     pthread_exit(NULL);
 };
+
+void add_times(int burst)
+{
+    run_time += burst - 1;
+    exec_time += burst;
+}
