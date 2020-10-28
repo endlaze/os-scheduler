@@ -21,16 +21,25 @@ struct pcb *rr_last = NULL;
 pthread_mutex_t mutex;
 int run_time = 0;
 int exec_time = 0;
-
+char algorithms[4][15] = {"FIFO", "SJF", "HPF", "Round Robin"};
+int ALGORITHM = 0;
+int QUANTUM = 1;
 int main(int argc, char *argv[])
 {
-    if (argc != 2)
+    if (argc < 3)
     {
-        printf("Error: Too few arguments, PORT is mandatory.\n");
+        printf("Error: Too few arguments, PORT and ALGORITHM are mandatories.\n");
         return 1;
     };
 
     const int PORT = atoi(argv[1]);
+
+    ALGORITHM = atoi(argv[2]);
+    if (ALGORITHM > 3)
+        printf("Error, algorithm must between 0 and 3\n\n");
+    if (ALGORITHM == 3)
+        QUANTUM = atoi(argv[3]);
+
     server_sockets(PORT, 1);
 
     return 0;
@@ -169,17 +178,34 @@ void print_ready_queue()
 
         node = node->prev;
     };
-    printf("\n\n\n");
+    printf("\n\n");
     pthread_mutex_unlock(&mutex);
 };
 
 void *cpu_scheduler(void *args)
 {
+    printf("Executing %s algorithm\n\n", algorithms[ALGORITHM]);
     while (simulator_active)
     {
         sleep(1);
         run_time++;
-        rr_algorithm(3);
+        switch (ALGORITHM)
+        {
+        case 0:
+            fifo_algorihm();
+            break;
+         case 1:
+            sjf_algorihm();
+            break;
+         case 2:
+            hpf_algorihm();
+            break;
+         case 3:
+            rr_algorihm(QUANTUM);
+            break;
+        default:
+            break;
+        }
     };
     pthread_exit(NULL);
 }
@@ -197,8 +223,8 @@ void fifo_algorithm()
     ready_head = node->prev;
 
     pthread_mutex_unlock(&mutex);
-    printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n", node->p_id, node->burst, node->priority);
-    printf("El proceso PID %d sale de ejecucion\n\n", node->p_id);
+    printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", node->p_id, node->burst, node->priority);
+    printf("Process with PID %d finished.\n\n", node->p_id);
     sleep(node->burst);
     add_times(node->burst);
     free(node);
@@ -237,9 +263,9 @@ void sjf_algorithm()
     }
 
     pthread_mutex_unlock(&mutex);
-    printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n\n", min->p_id, min->burst, min->priority);
+    printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", min->p_id, min->burst, min->priority);
     sleep(min->burst);
-    printf("El proceso PID %d sale de ejecucion\n\n", min->p_id);
+    printf("Process with PID %d finished.\n\n", min->p_id);
     add_times(min->burst);
     free(min);
 }
@@ -277,9 +303,9 @@ void hpf_algorithm()
     }
 
     pthread_mutex_unlock(&mutex);
-    printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n\n", min->p_id, min->burst, min->priority);
+    printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", min->p_id, min->burst, min->priority);
     sleep(min->burst);
-    printf("El proceso PID %d sale de ejecucion\n\n", min->p_id);
+    printf("Process with PID %d finished.\n\n", min->p_id);
     add_times(min->burst);
     free(min);
 }
@@ -317,7 +343,8 @@ void rr_algorithm(int quantum)
             rr_last->prev = node->prev;
         }
         
-        printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion a morir\n\n", node->p_id, sleep_time, node->priority);
+        printf("Executing process PID %d\t with burst of %d\t with priority of %d\n", node->p_id, sleep_time, node->priority);
+        printf("Process with PID %d finished.\n\n", node->p_id);
         // If node is the last element, set rr_last to null, else, free the node.
         if(rr_last != NULL && rr_last->p_id == ready_head->p_id) {
             rr_last = NULL;
@@ -331,7 +358,7 @@ void rr_algorithm(int quantum)
     else {
         node->burst = node->burst - quantum;
         rr_last = node;
-        printf("Proceso PID %d\t con burst %d\t con prioridad %d entra en ejecucion\n\n", node->p_id, sleep_time, node->priority);
+        printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", node->p_id, sleep_time, node->priority);
     }
 
     pthread_mutex_unlock(&mutex);
@@ -345,7 +372,6 @@ void *io_handler(void *args)
     int option;
     while (simulator_active)
     {
-        printf("Ingresar opcion: ");
         scanf("%d", &option);
 
         switch (option)
@@ -360,6 +386,7 @@ void *io_handler(void *args)
             break;
         }
     };
+
     pthread_exit(NULL);
 }
 
