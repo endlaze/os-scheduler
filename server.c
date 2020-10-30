@@ -45,8 +45,19 @@ int main(int argc, char *argv[])
     ALGORITHM = atoi(argv[2]);
     if (ALGORITHM > 3)
         printf("Error, algorithm must between 0 and 3\n\n");
-    if (ALGORITHM == 3)
+    if (ALGORITHM == 3 && argc == 4)
         QUANTUM = atoi(argv[3]);
+        if (QUANTUM <= 0) {
+            printf("Error, QUATUM value must be a positive integer.\n");
+            return 1;
+        }
+
+    else
+    {
+        printf("Round Robin algorithm requires QUANTUM value.\n");
+        return 1;
+    }
+    
 
     server_sockets(PORT, 1);
 
