@@ -13,15 +13,20 @@ void manual_client(const char file_path[]);
 void auto_client(int min_burst, int max_burst, int min_cre_rate, int max_cre_rate);
 const char *generate_process(int min_burst, int max_burst);
 const int gen_cre_rate();
-
+int MODE = 0;
 int auto_client_active = 1;
+char FILENAME[50];
+int MINBURST;
+int MAXBURST;
+int MINCREATION;
+int MAXCREATION;
 struct sockaddr_in server_addr;
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc < 3)
     {
-        printf("Error: Too few arguments, IP_ADDRESS and PORT are mandatory.\n");
+        printf("Error: Too few arguments, IP_ADDRESS, PORT and MODE are mandatory.\n");
         return 1;
     };
 
@@ -30,6 +35,22 @@ int main(int argc, char *argv[])
 
     const char *IP_ADDRESS = argv[1];
     const int PORT = atoi(argv[2]);
+    MODE = atoi(argv[3]);
+
+    if (MODE == 0) {
+        printf("Enter filename: ");
+        scanf("%s", &FILENAME);
+    }
+    else if (MODE == 1){
+        printf("Enter MINBURST MAXBURST MINCREATIONRATE MAXCREATIONRATE: ");
+        scanf("%d %d %d %d", &MINBURST, &MAXBURST, &MINCREATION, &MAXCREATION);
+    }
+    else
+    {
+        printf("Error, MODE is malformed. If MODE is manual you should provide textfile name, if auto mode is selected provide min and max burst\n");
+        return 1;
+    }
+    
 
     init_server_conn(IP_ADDRESS, PORT);
     client_sockets(IP_ADDRESS, PORT);
@@ -59,7 +80,7 @@ int open_socket()
 // Sends a process to the server and waits for a response;
 void *send_process(void *args)
 {
-    int range = (rand() % (4)) + 3;
+    int range = (rand() % (8 - 3 + 1)) + 3;
     sleep(range);
 
     char process_data[256];
@@ -104,8 +125,19 @@ void *send_process(void *args)
 void client_sockets(const char ip_address[], int port)
 {
     const char filePath[] = "processes.txt";
-    manual_client(filePath);
-    //auto_client(4, 8, 1, 5);
+    switch (MODE)
+    {
+    case 0:
+        manual_client(FILENAME);
+        break;
+    case 1:
+        auto_client(MINBURST, MAXBURST, 1, 5);
+        break;
+    
+    default:
+        break;
+    }
+    
 };
 
 void manual_client(const char file_path[])

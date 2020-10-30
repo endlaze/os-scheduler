@@ -9,18 +9,26 @@
 
 void fifo_algorithm();
 void sjf_algorithm();
+void hpf_algorithm();
 void rr_algorithm(int quantum);
+
 void server_sockets(int, int);
 void add_times(int burst);
 void delete_node(int p_id);
-int process_count = 1;
+int process_count = 0;
+int terminated_count = 0;
 int simulator_active = 1;
 struct pcb *ready_head = NULL;
 struct pcb *ready_tail = NULL;
 struct pcb *rr_last = NULL;
+struct term_process *term_processes_head = NULL;
+struct term_process *term_processes_tail = NULL;
 pthread_mutex_t mutex;
 int run_time = 0;
 int exec_time = 0;
+int total_tat = 0;
+int total_wt = 0;
+
 char algorithms[4][15] = {"FIFO", "SJF", "HPF", "Round Robin"};
 int ALGORITHM = 0;
 int QUANTUM = 1;
@@ -90,29 +98,64 @@ void bind_socket(int socket, int port)
     };
 }
 
+//
+
 // PCB struct
 struct pcb
 {
     struct pcb *prev;
     int p_id;
+    int arrival_time;
     int burst;
     int priority;
-    int current_burst;
+    int final_burst;
+    int finish_time;
+};
+struct term_process
+{
+    struct term_process *next;
+    int p_id;
+    int burst;
+    int arrival_time;
+    int finish_time;
+};
+
+void terminate_process(int p_id, int burst, int arrival_time, int finish_time)
+{
+    struct term_process *terminated_process = (struct term_process *)malloc(sizeof(struct term_process));
+    terminated_process->p_id = p_id;
+    terminated_process->burst = burst;
+    terminated_process->arrival_time = arrival_time;
+    terminated_process->finish_time = finish_time;
+
+    if (term_processes_head == NULL)
+    {
+        term_processes_head = terminated_process;
+        term_processes_tail = term_processes_head;
+    }
+    else
+    {
+        term_processes_tail->next = terminated_process;
+        term_processes_tail = term_processes_tail->next;
+    };
+    terminated_count++;
 };
 
 struct pcb *create_pcb(char process[])
 {
+    // Increases the process count by 1.
+    process_count++;
     // Creates a new PCB for the incoming process.
     char *delimiter = ",";
     struct pcb *proc_pcb = (struct pcb *)malloc(sizeof(struct pcb));
     // Inits the pcb with the corresponding info.
     proc_pcb->p_id = process_count;
+    proc_pcb->arrival_time = run_time;
     proc_pcb->burst = atoi(strtok(process, delimiter));
     proc_pcb->priority = atoi(strtok(NULL, delimiter));
     proc_pcb->prev = NULL;
+    proc_pcb->final_burst = proc_pcb->burst;
 
-    // Increases the process count by 1.
-    process_count++;
     return proc_pcb;
 };
 
@@ -164,16 +207,62 @@ void *job_scheduler(void *args)
     pthread_exit(NULL);
 };
 
+void print_final_info()
+{
+    printf("\n\n|Process|Arrival|Finish\t|Burst\t|TAT\t|WT\t|\n");
+    printf("-------------------------------------------------\n");
+
+    struct term_process *node = term_processes_head;
+
+    while (node != NULL)
+    {
+        const int p_id = node->p_id;
+        const int burst = node->burst;
+        const int arr_time = node->arrival_time;
+        const int finish_time = node->finish_time;
+
+        const int tat = finish_time - arr_time;
+        total_tat += tat;
+
+        const int wt = tat - burst;
+        total_wt += wt;
+
+        printf("|P%d\t|%d\t|%d\t|%d\t|%d\t|%d\t|\n", p_id, arr_time, finish_time, burst, tat, wt);
+
+        struct term_process *temp = node;
+        node = node->next;
+        free(temp);
+    };
+
+    term_processes_head = NULL;
+
+    printf("\n[+] Terminated processes: \t%d\n", terminated_count);
+    printf("[+] CPU Idle Time: \t%d seconds\n", run_time - exec_time);
+
+    if (terminated_count == 0)
+    {
+        terminated_count = 1;
+    };
+
+    const float av_tat = (float)total_tat / terminated_count;
+    const float av_wt = (float)total_wt / terminated_count;
+
+    printf("\n[+] Average TAT: %f seconds\n", av_tat);
+    printf("[+] Average  WT: %f seconds\n", av_wt);
+}
+
 void print_ready_queue()
 {
     pthread_mutex_lock(&mutex);
-    printf("\n\nPID\tBURST\tPRIORITY\n");
+    printf("\n\n----| READY - QUEUE |----\n\n");
+    printf("|PID\t|BURST\t|PRIORITY\n");
+    printf("-------------------------\n");
     // Prints all PBCs stored in the ready queue.
     struct pcb *node = ready_head;
     while (node != NULL)
     {
         char test[256] = "";
-        snprintf(test, sizeof test, "%d\t%d\t%d\n", node->p_id, node->burst, node->priority);
+        snprintf(test, sizeof test, "|%d\t|%d\t|%d\t\n", node->p_id, node->burst, node->priority);
         printf("%s", test);
 
         node = node->prev;
@@ -192,16 +281,16 @@ void *cpu_scheduler(void *args)
         switch (ALGORITHM)
         {
         case 0:
-            fifo_algorihm();
+            fifo_algorithm();
             break;
-         case 1:
-            sjf_algorihm();
+        case 1:
+            sjf_algorithm();
             break;
-         case 2:
-            hpf_algorihm();
+        case 2:
+            hpf_algorithm();
             break;
-         case 3:
-            rr_algorihm(QUANTUM);
+        case 3:
+            rr_algorithm(QUANTUM);
             break;
         default:
             break;
@@ -223,10 +312,11 @@ void fifo_algorithm()
     ready_head = node->prev;
 
     pthread_mutex_unlock(&mutex);
-    printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", node->p_id, node->burst, node->priority);
-    printf("Process with PID %d finished.\n\n", node->p_id);
+    printf("[+] Executing process - PID = %d - BURST = %d - PRIORITY = %d\n", node->p_id, node->burst, node->priority);
+    printf("[-] Process with PID %d finished.\n\n", node->p_id);
     sleep(node->burst);
     add_times(node->burst);
+    terminate_process(node->p_id, node->burst, node->arrival_time, run_time);
     free(node);
     return;
 };
@@ -263,10 +353,11 @@ void sjf_algorithm()
     }
 
     pthread_mutex_unlock(&mutex);
-    printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", min->p_id, min->burst, min->priority);
+    printf("[+] Executing process - PID = %d - BURST = %d - PRIORITY = %d\n", min->p_id, min->burst, min->priority);
     sleep(min->burst);
-    printf("Process with PID %d finished.\n\n", min->p_id);
+    printf("[-] Process with PID %d finished.\n\n", min->p_id);
     add_times(min->burst);
+    terminate_process(min->p_id, min->burst, min->arrival_time, run_time);
     free(min);
 }
 
@@ -303,10 +394,11 @@ void hpf_algorithm()
     }
 
     pthread_mutex_unlock(&mutex);
-    printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", min->p_id, min->burst, min->priority);
+    printf("[+] Executing process - PID = %d - BURST = %d - PRIORITY = %d\n", min->p_id, min->burst, min->priority);
     sleep(min->burst);
-    printf("Process with PID %d finished.\n\n", min->p_id);
+    printf("[-] Process with PID %d finished.\n\n", min->p_id);
     add_times(min->burst);
+    terminate_process(min->p_id, min->burst, min->arrival_time, run_time);
     free(min);
 }
 
@@ -324,47 +416,53 @@ void rr_algorithm(int quantum)
         node = rr_last->prev;
     }
 
-    if (node == NULL) {
+    if (node == NULL)
+    {
         pthread_mutex_unlock(&mutex);
         return;
     }
 
-    if (node->burst <= quantum) {
+    if (node->burst <= quantum)
+    {
         sleep_time = node->burst;
 
         // If node is the head, change the head to the prev
-        if (node->p_id == ready_head->p_id){
+        if (node->p_id == ready_head->p_id)
+        {
             ready_head = node->prev;
-
         }
 
         // If node isn't the head, then change the last prev to node prev
-        if (rr_last != NULL) {
+        if (rr_last != NULL)
+        {
             rr_last->prev = node->prev;
         }
-        
-        printf("Executing process PID %d\t with burst of %d\t with priority of %d\n", node->p_id, sleep_time, node->priority);
-        printf("Process with PID %d finished.\n\n", node->p_id);
+
+        printf("[+] Executing process - PID = %d - BURST = %d - PRIORITY = %d\n", node->p_id, sleep_time, node->priority);
+        printf("[-] Process with PID %d finished.\n\n", node->p_id);
         // If node is the last element, set rr_last to null, else, free the node.
-        if(rr_last != NULL && rr_last->p_id == ready_head->p_id) {
+        if (rr_last != NULL && rr_last->p_id == ready_head->p_id)
+        {
+            terminate_process(node->p_id, node->final_burst, node->arrival_time, run_time + sleep_time - 1);
             rr_last = NULL;
         }
         else
         {
+            terminate_process(node->p_id, node->final_burst, node->arrival_time, run_time + sleep_time - 1);
+            node = NULL;
             free(node);
         }
-        
     }
-    else {
+    else
+    {
         node->burst = node->burst - quantum;
         rr_last = node;
-        printf("Executing process PID %d\t with burst of %d\t with priority of %d\n\n", node->p_id, sleep_time, node->priority);
+        printf("[+] Executing process - PID = %d - BURST = %d - PRIORITY = %d\n", node->p_id, sleep_time, node->priority);
     }
 
     pthread_mutex_unlock(&mutex);
     add_times(sleep_time);
     sleep(sleep_time);
-    
 }
 
 void *io_handler(void *args)
@@ -386,7 +484,7 @@ void *io_handler(void *args)
             break;
         }
     };
-
+    print_final_info();
     pthread_exit(NULL);
 }
 
