@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-    else
+    else if (ALGORITHM == 3 && argc < 4)
     {
         printf("Round Robin algorithm requires QUANTUM value.\n");
         return 1;
@@ -444,15 +444,16 @@ void rr_algorithm(int quantum)
         }
 
         // If node isn't the head, then change the last prev to node prev
-        if (rr_last != NULL)
+        if (rr_last != NULL && rr_last->prev != NULL)
         {
             rr_last->prev = node->prev;
         }
 
         printf("[+] Executing process - PID = %d - BURST = %d - PRIORITY = %d\n", node->p_id, sleep_time, node->priority);
         printf("[-] Process with PID %d finished.\n\n", node->p_id);
+
         // If node is the last element, set rr_last to null, else, free the node.
-        if (rr_last != NULL && rr_last->p_id == ready_head->p_id)
+        if (rr_last != NULL && rr_last->p_id == node->p_id )
         {
             terminate_process(node->p_id, node->final_burst, node->arrival_time, run_time + sleep_time - 1);
             rr_last = NULL;
@@ -460,7 +461,6 @@ void rr_algorithm(int quantum)
         else
         {
             terminate_process(node->p_id, node->final_burst, node->arrival_time, run_time + sleep_time - 1);
-            node = NULL;
             free(node);
         }
     }
